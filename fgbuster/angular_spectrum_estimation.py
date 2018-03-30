@@ -11,7 +11,7 @@ import numpy as np
 import healpy as hp
 import sys
 
-def TEB_spectra( IQU_map, IQU_map_2=None, ell_max=0.0, estimator=None, *args, **kwargs ):
+def TEB_spectra( IQU_map, IQU_map_2=None, ell_max=0.0, estimator=None, n_iter=10, *args, **kwargs ):
     """ Get a pre-defined PySM sky
 
     Parameters
@@ -102,6 +102,6 @@ def TEB_spectra( IQU_map, IQU_map_2=None, ell_max=0.0, estimator=None, *args, **
         if ell_max <= 3*nside_input_map-1:
         	ell_max = 3*nside_input_map-1
 
-        Cl = hp.sphtfunc.anafast( map1=IQU_map,map2=IQU_map_2, iter=10, lmax=ell_max ) 
+        Cl = hp.sphtfunc.anafast(map1=IQU_map, map2=IQU_map_2, iter=n_iter, lmax=ell_max) 
 
         return Cl
