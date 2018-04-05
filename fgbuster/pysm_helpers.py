@@ -110,5 +110,5 @@ def _dict_instrument_litebird(nside, units='uK_CMB'):
         'output_units': units,
         'output_directory': '/dev/null',
         'output_prefix': 'planck',
-        'use_smoothing': False,
+        'use_smoothing': True,
     }

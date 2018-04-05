@@ -11,19 +11,24 @@ import numpy as np
 import healpy as hp
 import sys
 
+arcmin2rad = np.pi/(60.*180.)
+
 def TEB_spectra( IQU_map, IQU_map_2=None, ell_max=0.0, estimator=None, n_iter=10, *args, **kwargs ):
     """ Get a pre-defined PySM sky
 
     Parameters
     ----------
-    IQU_map:  float, array-like shape (Npix,) or (3, Npix)
-              Either an array representing a map, or a sequence of 3 arrays
-              representing I, Q, U maps
+    IQU_map: float, array-like shape (Npix,) or (3, Npix)
+             Either an array representing a map, or a sequence of 3 arrays
+             representing I, Q, U maps
     IQU_map_2: float, array-like shape (Npix,) or (3, Npix)
-              Either an array representing a map, or a sequence of 3 arrays
-              representing I, Q, U maps
+               Either an array representing a map, or a sequence of 3 arrays
+               representing I, Q, U maps
     ell_max: int, scalar, optional
              Maximum l of the power spectrum (default: 3*nside-1)
+    n_iter: int, number of iteration 
+    fwhm_beam: float, FWHM of the Gaussian beam to be used to deconvolve spectra 
+    fwhm_beam_2: float, FWHM of the Gaussian beam to be used to deconvolve spectra     
     estimator: string
                choice of the power spectrum estimator, among 'anafast' (default) and NaMaster 
                the user can provide the necessary *args and **kwargs for each method 
@@ -91,17 +96,35 @@ def TEB_spectra( IQU_map, IQU_map_2=None, ell_max=0.0, estimator=None, n_iter=10
 
     else:
 
-        if isinstance(IQU_map, tuple):
-            print >> sys.stderr, "anafast requires input map to be an array, not a tuple"
+        #if isinstance(IQU_map, tuple):
+        #    print >> sys.stderr, "anafast requires input map to be an array, not a tuple"
 
-        if IQU_map.ndim > 1:
-            nside_input_map = hp.npix2nside(IQU_map[0].shape[0])
+        #if IQU_map.ndim > 1:
+        #    nside_input_map = hp.npix2nside(IQU_map[0].shape[0])
+        #else:
+        #    nside_input_map = hp.npix2nside(len(IQU_map))
+
+        #if ell_max <= 3*nside_input_map-1:
+        # 	ell_max = 3*nside_input_map-1
+        pol = True if IQU_map.ndim>1 else False
+        
+        Cl = hp.sphtfunc.anafast(map1=IQU_map, map2=IQU_map_2, iter=n_iter, lmax=ell_max)
+        
+        if "fwhm_beam" in kwargs.keys():
+            Bl = hp.gauss_beam(kwargs["fwhm_beam"]*arcmin2rad, lmax=ell_max, pol=pol)
         else:
-            nside_input_map = hp.npix2nside(len(IQU_map))
-
-        if ell_max <= 3*nside_input_map-1:
-        	ell_max = 3*nside_input_map-1
-
-        Cl = hp.sphtfunc.anafast(map1=IQU_map, map2=IQU_map_2, iter=n_iter, lmax=ell_max) 
-
+            Bl = np.ones((ell_max+1,3))
+        if "fwhm_beam_2" in kwargs.keys():
+            Bl2 = hp.gauss_beam(kwargs["fwhm_beam_2"]*arcmin2rad, lmax=ell_max, pol=pol)
+        else:
+            Bl2 = Bl
+        inv_Bl = 1/(Bl*Bl2);  max_inv = 1e4 # maximum inverse value
+        inv_Bl[inv_Bl>max_inv] = max_inv
+        if pol: #TT, EE, BB, TE, EB, TB
+            Cl = [Cl[0]*inv_Bl[:,0], Cl[1]*inv_Bl[:,1], Cl[2]*inv_Bl[:,2],
+                  Cl[3]*inv_Bl[:,3], Cl[4]*inv_Bl[:,1], Cl[5]*inv_Bl[:,3]]
+        else:
+            Cl = Cl*inv_Bl
+            
+            
         return Cl
