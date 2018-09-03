@@ -54,6 +54,17 @@ def weighted_comp_sep(components, instrument, data, cov, nside=0,
       * During the component separation, a pixel is masked if at least one of
         its frequencies is masked, either in `data` or in `cov`.
     """
+    if nside:
+        patch_ids = hp.ud_grade(np.arange(hp.nside2npix(nside)),
+                                hp.npix2nside(data.shape[-1]))
+    else:
+        patch_ids = None
+    return adaptive_weighted_comp_sep(components, instrument, data, cov,
+                                      patch_ids, **minimize_kwargs)
+
+
+def adaptive_weighted_comp_sep(components, instrument, data, cov,
+                               patch_ids=None, **minimize_kwargs):
     instrument = _force_keys_as_attributes(instrument)
     # Make sure that cov has the frequency dimension and is equal to n_freq
     cov_shape = list(np.broadcast(cov, data).shape)
@@ -81,9 +92,8 @@ def weighted_comp_sep(components, instrument, data, cov, nside=0,
         A_ev = A_ev()
 
     # Component separation
-    if nside:
-        patch_ids = hp.ud_grade(np.arange(hp.nside2npix(nside)),
-                                hp.npix2nside(data.shape[-1]))[mask]
+    if patch_ids is not None:
+        patch_ids = patch_ids[mask]
         res = alg.multi_comp_sep(A_ev, data_cs, invN, A_dB_ev, comp_of_param,
                              patch_ids, x0, **minimize_kwargs)
     else:
@@ -111,7 +121,7 @@ def weighted_comp_sep(components, instrument, data, cov, nside=0,
 
     if len(x0):
         res.chi_dB = [craft_maps(c) for c in res.chi_dB]
-        if nside:
+        if patch_ids is not None:
             res.x = craft_params(res.x)
             res.Sigma = craft_params(res.Sigma)
 
