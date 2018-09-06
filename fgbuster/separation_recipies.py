@@ -7,26 +7,18 @@ import healpy as hp
 from . import algebra as alg
 from .mixingmatrix import MixingMatrix
 
-
-__all__ = [
-    'weighted_comp_sep',
-    'basic_comp_sep',
-]
-
-
-
-def weighted_comp_sep(components, instrument, data, cov, nside=0,
-                      **minimize_kwargs):
-    """ Weighted component separation
+def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
+                               **minimize_kwargs):
+    """ Adaptive component separation
 
     Parameters
     ----------
     components: list or tuple of lists
-        List storing the `Components` of the mixing matrix
-    instrument:
-        Instrument object used to define the mixing matrix.
-        It can be any object that has what follows wither as a key or as an
-        attribute (e.g. dictionary, PySM.Instrument)
+         List storing the `Components` of the mixing matrix
+    instrument: PySM.Instrument
+        Instrument object used to define the mixing matrix and the
+        frequency-dependent noise weight.
+        It is required to have:
          - Frequencies
     data: ndarray or MaskedArray
         Data vector to be separated. Shape `(n_freq, ..., n_pix)`. `...` can be
@@ -34,10 +26,8 @@ def weighted_comp_sep(components, instrument, data, cov, nside=0,
         Values equal to hp.UNSEEN or, if MaskedArray, masked values are
         neglected during the component separation process.
     cov: ndarray or MaskedArray
-        Covariance maps. It has to be broadcastable to `data`.
-        Notice that you can not pass a pixel independent covariance as an array
-        with shape `(n_freq,)`: it has to be `(n_freq, ..., 1)` in order to be
-        broadcastable (consider using `basic_comp_sep`, in this case).
+        Covariance maps. It has to be broadcastable to data and with the same
+        `n_freq`.
         Values equal to hp.UNSEEN or, if MaskedArray, masked values are
         neglected during the component separation process.
     patch_ids: array
@@ -52,25 +42,20 @@ def weighted_comp_sep(components, instrument, data, cov, nside=0,
     Note
     ----
       * During the component separation, a pixel is masked if at least one of
-        its frequencies is masked, either in `data` or in `cov`.
+        its frequencies is masked.
+      * If you provide temperature and polarization maps, they will constrain the
+        **same** set of parameters. In particular, separation is **not** done
+        independently for temperature and polarization. If you want an
+        independent fitting for temperature and polarization, please launch
+
+         res_T = basic_comp_sep(component_T, instrument, data[:, 0], **kwargs)
+         res_P = basic_comp_sep(component_P, instrument, data[:, 1:], **kwargs)
+
     """
-    if nside:
-        patch_ids = hp.ud_grade(np.arange(hp.nside2npix(nside)),
-                                hp.npix2nside(data.shape[-1]))
-    else:
-        patch_ids = None
-    return adaptive_weighted_comp_sep(components, instrument, data, cov,
-                                      patch_ids, **minimize_kwargs)
-
-
-def adaptive_weighted_comp_sep(components, instrument, data, cov,
-                               patch_ids=None, **minimize_kwargs):
-    instrument = _force_keys_as_attributes(instrument)
-    # Make sure that cov has the frequency dimension and is equal to n_freq
-    cov_shape = list(np.broadcast(cov, data).shape)
-    if cov.ndim < 2 or (data.ndim == 3 and cov.shape[-2] == 1):
-        cov_shape[-2] = 1
-    cov = np.broadcast_to(cov, cov_shape, subok=True)
+    # Checks
+    np.broadcast(cov, data)
+    assert cov.ndim == data.ndim
+    assert cov.shape[0] == data.shape[0]
     
     # Prepare mask and set to zero all the frequencies in the masked pixels: 
     # NOTE: mask are good pixels

@@ -303,7 +303,7 @@ if __name__ == '__main__':
     '''
     suite = unittest.TestSuite()
     for method in dir(TestWeightedCompSep):
-        if 'the failing thest' in method:
+        if 'the failing test' in method:
             suite.addTest(TestWeightedCompSep(method))
     unittest.TextTestRunner().run(suite)
     '''
