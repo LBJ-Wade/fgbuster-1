@@ -832,7 +832,7 @@ def multi_comp_sep(A_ev, d, invN, A_dB_ev, comp_of_dB, patch_ids,
         At this moment, it just contains `x0`, the initial guess for the
         spectral parameters. It is required if A_ev is a function and ignored
         otherwise.
-    minimize_kwargs : dict
+    minimize_kwargs: dict
         Keyword arguments to be passed to `scipy.optimize.minimize`.
         A good choice for most cases is
         `minimize_kwargs = {'tol': 1, options: {'disp': True}}`. `tol` depends

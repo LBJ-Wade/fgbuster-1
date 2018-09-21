@@ -4,8 +4,92 @@
 from six import string_types
 import numpy as np
 import healpy as hp
-from . import algebra as alg
+from .segmentation import _update_idx, downgrade
+from .algebra import multi_comp_sep, comp_sep
 from .mixingmatrix import MixingMatrix
+
+def iterative_adaptive_weighted_comp_sep(
+        components, instrument, data, cov, condition,
+        power=0, nside_min=0, nside_max=None,
+        **minimize_kwargs):
+    """ Adaptive component separation
+
+    Parameters
+    ----------
+    components: list or tuple of lists
+         List storing the `Components` of the mixing matrix
+    instrument: PySM.Instrument
+        Instrument object used to define the mixing matrix and the
+        frequency-dependent noise weight.
+        It is required to have:
+         - Frequencies
+    data: ndarray or MaskedArray
+        Data vector to be separated. Shape `(n_freq, ..., n_pix)`. `...` can be
+        also absent.
+        Values equal to hp.UNSEEN or, if MaskedArray, masked values are
+        neglected during the component separation process.
+    cov: ndarray or MaskedArray
+        Covariance maps. It has to be broadcastable to data and with the same
+        `n_freq`.
+        Values equal to hp.UNSEEN or, if MaskedArray, masked values are
+        neglected during the component separation process.
+    condition: function
+        Takes an output from adaptive_weighted_comp_sep and a nside. Returns a
+        boolean map at that nside which says it the those pixels deserve an
+        independent fitting
+    power: float
+        The downgraded sup-pixel is the sum over the subpixel divided the number
+        of subpixels to this power
+    nside_min: int
+        All pixels that are still unassigned at this nside are assigned to a
+        single region
+    nside_max: int
+        Do not trigger ne regions above this nside
+
+    Returns
+    -------
+    result : scipy.optimze.OptimizeResult (dict)
+        See `multi_comp_sep` if `nside` is positive and `comp_sep` otherwise.
+
+    Note
+    ----
+      * During the component separation, a pixel is masked if at least one of
+        its frequencies is masked.
+      * If you provide temperature and polarization maps, they will constrain the
+        **same** set of parameters. In particular, separation is **not** done
+        independently for temperature and polarization. If you want an
+        independent fitting for temperature and polarization, please launch
+
+         res_T = basic_comp_sep(component_T, instrument, data[:, 0], **kwargs)
+         res_P = basic_comp_sep(component_P, instrument, data[:, 1:], **kwargs)
+
+    """
+    data_bak = data.copy()
+    patch_ids = np.zeros(data.shape[-1], dtype=int)  # zero means unassigned
+    nside = hp.get_nside(patch_ids)
+    nsides = [0]
+    while nside >= nside_min and nside > 0:
+        if nside_max is None or nside <= nside_max:
+            data_bak[..., patch_ids.astype(bool)] = hp.UNSEEN
+            print('Doing nside %i'%nside)
+            res = adaptive_weighted_comp_sep(
+                components, instrument, data_bak, cov, patch_ids,
+                **minimize_kwargs)
+            trigger_new_pix = condition(res, nside)
+            n_pix_triggered = _update_idx(patch_ids, trigger_new_pix)
+            print('%i pixels at nside %i were triggered'
+                  %(n_pix_triggered, nside))
+            nsides += [nside] * n_pix_triggered
+        nside //= 2
+
+    res = adaptive_weighted_comp_sep(components, instrument, data, cov,
+                                     patch_ids, **minimize_kwargs)
+    res.nside = np.array(nsides).astype(float)
+    res.nside_map = res.nside[patch_ids]
+    res.nside_map[~res.mask_good] = hp.UNSEEN
+        
+    return res
+
 
 def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
                                **minimize_kwargs):
@@ -112,7 +196,7 @@ def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
 
     res.s = craft_maps(res.s)
     res.chi = craft_maps(res.chi)
-    res.invAtNA = craft_maps(res.invAtNA)
+    res.chi_dB = [craft_maps(c) for c in res.chi_dB]
     res.mask_good = mask
 
     return res
