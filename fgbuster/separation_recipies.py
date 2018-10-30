@@ -10,7 +10,7 @@ from .mixingmatrix import MixingMatrix
 
 def iterative_adaptive_weighted_comp_sep(
         components, instrument, data, cov, condition,
-        power=0, nside_min=0, nside_max=None,
+        nside_min=0, nside_max=None,
         **minimize_kwargs):
     """ Adaptive component separation
 
@@ -188,15 +188,22 @@ def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
         result[np.isnan(result)] = hp.UNSEEN
         return result.T
 
-    if len(x0):
+    try:
+        res.x_map = np.empty(patch_ids_cs.shape + res.x.shape[1:])
+        res.x_map = res.x[patch_ids_cs]
+        res.x_map = craft_maps(res.x_map)
+        res.Sigma_map = np.empty(patch_ids_cs.shape + res.Sigma.shape[1:])
+        res.Sigma_map = res.Sigma[patch_ids_cs]
+        res.Sigma_map = craft_maps(res.Sigma_map)
+        res.x = craft_params(res.x)
+        res.Sigma = craft_params(res.Sigma)
         res.chi_dB = [craft_maps(c) for c in res.chi_dB]
-        if patch_ids is not None:
-            res.x = craft_params(res.x)
-            res.Sigma = craft_params(res.Sigma)
+    except AttributeError:  # Constant mixing matrix
+        pass
 
     res.s = craft_maps(res.s)
     res.chi = craft_maps(res.chi)
-    res.chi_dB = [craft_maps(c) for c in res.chi_dB]
+    res.invAtNA = craft_maps(res.invAtNA)
     res.mask_good = mask
 
     return res

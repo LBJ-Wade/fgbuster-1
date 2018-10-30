@@ -27,8 +27,8 @@ def healpix_multiresolution(map_in, condition, power=0,
         Map of the index of the region to which each pixel in map_in belongs to.
     nsides:
         Map of the index of the region to which each pixel in map_in belongs to.
-        
     '''
+    mask_bad = hp.ma(map_in).mask
     idx = np.zeros_like(map_in, dtype=int)
     nside = hp.get_nside(map_in)
     nsides = [0]
@@ -52,27 +52,34 @@ def healpix_multiresolution(map_in, condition, power=0,
 
 def _update_idx(map_idx, trigger_new_pix):
     # NOTE index equal zero -> pixel still unassigned
+    # Checks and preliminaries
     assert len(trigger_new_pix) <= len(map_idx)
+    if hp.pixelfunc.is_ma(trigger_new_pix.reshape(1,-1)):
+        trigger_new_pix = trigger_new_pix.data * hp.mask_good(trigger_new_pix)
+
     # NOTE trigger_new_pix can be true for pixels already assigned to an index
     # Build a mask of the pixels that are already assigned
     mask = np.zeros_like(map_idx, dtype=float)
     mask[map_idx != 0] = hp.UNSEEN
     mask = hp.ud_grade(mask, hp.get_nside(trigger_new_pix))
-    # Intersect with trigger_new_pix: now mask is true if and only if the pixels
-    # need a new index assigned to it
+    # Intersect with trigger_new_pix and make mask bool, non-ma ndarray
     mask = hp.mask_good(mask) * trigger_new_pix
+    # Now mask is true if and only if the pixel needs a new index assigned to it
     idx = np.zeros_like(mask, dtype=float)
     idx[mask] = np.arange(mask.sum()) + (1 + map_idx.max())
     idx = hp.ud_grade(idx, hp.get_nside(map_idx)).astype(int)
-    idx[map_idx != 0] = 0  # update only unassigned pixels
+    if mask_bad is None:
+        idx[map_idx != 0] = 0  # update only unassigned pixels
+    else:
+        idx[(map_idx != 0) | mask_bad] = 0  # update only unassigned pixels
     map_idx += idx
-    return np.where(mask)[0]
-    #return mask.sum()
+    return mask.sum()
 
 
 def downgrade(map_in, nside, power=0):
     nside_in = hp.get_nside(map_in)
     assert nside_in >= nside
+    assert nside > 0
     idx = hp.ud_grade(np.arange(hp.nside2npix(nside)), nside_in).astype(int)
     map_in = hp.ma(map_in)
     map_out = np.bincount(idx[~map_in.mask], map_in[~map_in.mask],

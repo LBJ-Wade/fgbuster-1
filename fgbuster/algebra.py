@@ -45,6 +45,7 @@ __all__ = []  # Prevent wildcard import (names in algebra too generic)
 
 OPTIMIZE = False
 _EPSILON_LOGL_DB = 1e-6
+CHI_GLOBAL = False
 
 
 def _inv(m):
@@ -780,15 +781,26 @@ def comp_sep(A_ev, d, invN, A_dB_ev, comp_of_dB,
         fisher = _fisher_logL_dB_dB_svd(u_e_v_last[0], res.s,
                                         A_dB_last[0], comp_of_dB)
         As_dB = (_mv(A_dB_i, res.s[comp_of_dB_i])
-                 for A_dB_i, comp_of_dB_i in zip(A_dB_last[0], comp_of_dB))
-        res.chi_dB = []
-        for comp_of_dB_i, As_dB_i in zip(comp_of_dB, As_dB):
-            freq_of_dB = comp_of_dB_i[:-1] + (slice(None),)
-            with np.errstate(invalid='ignore'):
-                # As_dB_i can be 0 because invN can be 0, in that case nan is
-                # the right value for chi_dB
-                res.chi_dB.append(np.sum(res.chi[freq_of_dB] * As_dB_i, -1)
-                                  / np.linalg.norm(As_dB_i, axis=-1))
+                  for A_dB_i, comp_of_dB_i in zip(A_dB_last[0], comp_of_dB))
+        if CHI_GLOBAL:
+            DAs_dB = (As_dB_i - _mv(u_e_v_last[0][0], _mtv(u_e_v_last[0][0], As_dB_i))
+                      for As_dB_i in As_dB)
+            res.chi_dB = []
+            for comp_of_dB_i, DAs_dB_i in zip(comp_of_dB, DAs_dB):
+                freq_of_dB = comp_of_dB_i[:-1] + (slice(None),)
+                with np.errstate(invalid='ignore'):
+                    x = np.zeros_like(d)
+                    x[freq_of_dB] += DAs_dB_i
+                    res.chi_dB.append(x / np.linalg.norm(x))
+        else:
+            res.chi_dB = []
+            for comp_of_dB_i, As_dB_i in zip(comp_of_dB, As_dB):
+                freq_of_dB = comp_of_dB_i[:-1] + (slice(None),)
+                with np.errstate(invalid='ignore'):
+                    # As_dB_i can be 0 because invN can be 0, in that case nan is
+                    # the right value for chi_dB
+                    res.chi_dB.append(np.sum(res.chi[freq_of_dB] * As_dB_i, -1)
+                                      / np.linalg.norm(As_dB_i, axis=-1))
     try:
         res.Sigma = np.linalg.inv(fisher)
     except np.linalg.LinAlgError:
