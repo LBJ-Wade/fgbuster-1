@@ -98,6 +98,51 @@ def iterative_adaptive_weighted_comp_sep(
     return res
 
 
+def weighted_comp_sep(components, instrument, data, cov, nside=0,
+                      **minimize_kwargs):
+    """ Weighted component separation
+
+    Parameters
+    ----------
+    components: list or tuple of lists
+        List storing the `Components` of the mixing matrix
+    instrument:
+        Instrument object used to define the mixing matrix.
+        It can be any object that has what follows wither as a key or as an
+        attribute (e.g. dictionary, PySM.Instrument)
+         - Frequencies
+    data: ndarray or MaskedArray
+        Data vector to be separated. Shape `(n_freq, ..., n_pix)`. `...` can be
+        also absent.
+        Values equal to hp.UNSEEN or, if MaskedArray, masked values are
+        neglected during the component separation process.
+    cov: ndarray or MaskedArray
+        Covariance maps. It has to be broadcastable to `data`.
+        Notice that you can not pass a pixel independent covariance as an array
+        with shape `(n_freq,)`: it has to be `(n_freq, ..., 1)` in order to be
+        broadcastable (consider using `basic_comp_sep`, in this case).
+        Values equal to hp.UNSEEN or, if MaskedArray, masked values are
+        neglected during the component separation process.
+    patch_ids: array
+        For each pixel, the array stores the id of the region over which to
+        perform component separation independently.
+
+    Returns
+    -------
+    result : scipy.optimze.OptimizeResult (dict)
+        See `multi_comp_sep` if `nside` is positive and `comp_sep` otherwise.
+
+    Note
+    ----
+      * During the component separation, a pixel is masked if at least one of
+        its frequencies is masked, either in `data` or in `cov`.
+    """
+    patch_ids = hp.ud_grade(np.arange(hp.nside2npix(nside)),
+                            hp.npix2nside(data.shape[-1]))
+    return adaptive_weighted_comp_sep(components, instrument, data, cov,
+                                      patch_ids, **minimize_kwargs)
+
+
 def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
                                **minimize_kwargs):
     """ Adaptive component separation
