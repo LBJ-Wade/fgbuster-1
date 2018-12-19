@@ -5,8 +5,15 @@ from six import string_types
 import numpy as np
 import healpy as hp
 from .segmentation import _update_idx, downgrade
-from .algebra import multi_comp_sep, comp_sep
+from . import algebra as alg
 from .mixingmatrix import MixingMatrix
+
+
+__all__ = [
+    'weighted_comp_sep',
+    'basic_comp_sep',
+]
+
 
 def iterative_adaptive_weighted_comp_sep(
         components, instrument, data, cov, condition,
