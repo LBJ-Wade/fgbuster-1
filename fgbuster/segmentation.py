@@ -32,29 +32,29 @@ def healpix_multiresolution(map_in, condition, power=0,
     idx = np.zeros_like(map_in, dtype=int)
     nside = hp.get_nside(map_in)
     nsides = [0]
-    healpix_ids = [0]
+    #healpix_ids = [0]
     while True:
         if nside_max is None or nside <= nside_max:
             trigger_new_pix = condition(map_in)
-            #n_pix_triggered = _update_idx(idx, trigger_new_pix)
-            healpix_id = _update_idx(idx, trigger_new_pix)
-            healpix_ids += list(healpix_id)
-            nsides += [nside] * len(healpix_id)
-            #nsides += [nside] * n_pix_triggered
+            n_pix_triggered = _update_idx(idx, trigger_new_pix, mask_bad)
+            #healpix_id = _update_idx(idx, trigger_new_pix, mask_bad)
+            #healpix_ids += list(healpix_id)
+            #nsides += [nside] * len(healpix_id)
+            nsides += [nside] * n_pix_triggered
         nside //= 2
         if nside > nside_min:
             map_in = downgrade(map_in, nside, power)
         else:
             break
-        
-    return idx, np.array(nsides), np.array(healpix_ids)
+
+    return idx, np.array(nsides)#, np.array(healpix_ids)
 
 
-def _update_idx(map_idx, trigger_new_pix):
+def _update_idx(map_idx, trigger_new_pix, mask_bad=None):
     # NOTE index equal zero -> pixel still unassigned
     # Checks and preliminaries
     assert len(trigger_new_pix) <= len(map_idx)
-    if hp.pixelfunc.is_ma(trigger_new_pix.reshape(1,-1)):
+    if hp.pixelfunc.is_ma(trigger_new_pix.reshape(1, -1)):
         trigger_new_pix = trigger_new_pix.data * hp.mask_good(trigger_new_pix)
 
     # NOTE trigger_new_pix can be true for pixels already assigned to an index

@@ -214,9 +214,9 @@ def adaptive_weighted_comp_sep(components, instrument, data, cov, patch_ids,
 
     # Component separation
     if patch_ids is not None:
-        patch_ids = patch_ids[mask]
+        patch_ids_cs = patch_ids[mask]
         res = alg.multi_comp_sep(A_ev, data_cs, invN, A_dB_ev, comp_of_param,
-                             patch_ids, x0, **minimize_kwargs)
+                             patch_ids_cs, x0, **minimize_kwargs)
     else:
         res = alg.comp_sep(A_ev, data_cs, invN, A_dB_ev, comp_of_param, x0,
                        **minimize_kwargs)
