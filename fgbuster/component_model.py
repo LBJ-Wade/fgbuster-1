@@ -1,3 +1,19 @@
+# FGBuster
+# Copyright (C) 2019 Davide Poletti, Josquin Errard and the FGBuster developers
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 """ Parametric spectral energy distribution (SED)
 
 Unified API for evaluating SEDs, see :class:`Component`.
@@ -11,7 +27,7 @@ prepared.
 import os.path as op
 import numpy as np
 import sympy
-from sympy import lambdify
+import sympy
 from sympy.parsing.sympy_parser import parse_expr
 import scipy
 from scipy import constants
@@ -22,16 +38,17 @@ import pysm
 __all__ = [
     'Component',
     'AnalyticComponent',
-    'AME',
     'CMB',
     'Dust',
-    'FreeFree',
+    'Synchrotron',
     'ModifiedBlackBody',
     'PowerLaw',
-    'PowerLawCurv',
-    'Synchrotron',
+    'AME',
+    'FreeFree',
 ]
 
+
+lambdify = lambda x, y: sympy.lambdify(x, y, 'numpy')
 
 H_OVER_K = constants.h * 1e9 / constants.k
 
@@ -51,18 +68,18 @@ class Component(object):
     It defines the API.
     """
 
-    def _add_last_dimension_if_not_scalar(self, param):
-        if isinstance(param, np.ndarray) and len(param) > 1:
+    def _add_last_dimension_if_ndarray(self, param):
+        try:
             # Lambdified expressions always output an ndarray with shape
             # (param_dim_1, ..., param_dim_n, n_freq). However, parameters and
             # frequencies are both symbols with (no special meaning). In order
             # to impose the shape of the output, we append a dimension to the
             # parameters and let the broadcasting inside the lambdified
             # expressions do the rest
-            # TODO: Can replace this with a try/except?
             return param[..., np.newaxis]
-        # param is an scalar value, no special treatment is required
-        return param
+        except TypeError:
+            # param is an scalar value, no special treatment is required
+            return param
 
     def eval(self, nu, *params):
         """ Evaluate the SED
@@ -78,15 +95,21 @@ class Component(object):
         Returns
         -------
         result: ndarray
-            SED. The shape is
-            * the same of `nu` the parameters are all scalar. 
-            * `np.broadcast(*params).shape + nu.shape` otherwise
+            SED. The shape is always ``np.broadcast(*params).shape + nu.shape``.
+            In particular, if the parameters are all floats, the shape is the
+            same `nu`.
+
         """
         assert len(params) == self.n_param
+        if params and np.broadcast(*params).ndim == 0:
+            # Parameters are all scalars.
+            # This case is frequent and easy, thus leave early
+            return self._lambda(nu, *params)
+
         # Make sure that broadcasting rules will apply correctly when passing
         # the parameters to the lambdified functions:
         # last axis has to be nu, but that axis is missing in the parameters
-        new_params = map(self._add_last_dimension_if_not_scalar, params)
+        new_params = [self._add_last_dimension_if_ndarray(p) for p in params]
         return self._lambda(nu, *new_params)
 
     def diff(self, nu, *params):
@@ -110,7 +133,7 @@ class Component(object):
         assert len(params) == self.n_param
         if not params:
             return []
-        elif len(np.broadcast(*params).shape) <= 1:
+        elif np.broadcast(*params).ndim == 0:
             # Parameters are all scalars.
             # This case is frequent and easy, thus leave early
             return [self._lambda_diff[i_p](nu, *params)
@@ -119,7 +142,7 @@ class Component(object):
         # Make sure that broadcasting rules will apply correctly when passing
         # the parameters to the lambdified functions:
         # last axis has to be nu, but that axis is missing in the parameters
-        new_params = map(self._add_last_dimension_if_not_scalar, params)
+        new_params = [self._add_last_dimension_if_ndarray(p) for p in params]
 
         res = []
         for i_p in range(self.n_param):
@@ -129,8 +152,8 @@ class Component(object):
     def diff_diff(self, nu, *params):
         assert len(params) == self.n_param
         if not params:
-            return []
-        elif len(np.broadcast(*params).shape) <= 1:
+            return [[]]
+        elif np.broadcast(*params).ndim == 0:
             # Parameters are all scalars.
             # This case is frequent and easy, thus leave early
             return [[self._lambda_diff_diff[i_p][j_p](nu, *params)
@@ -140,7 +163,7 @@ class Component(object):
         # Make sure that broadcasting rules will apply correctly when passing
         # the parameters to the lambdified functions:
         # last axis has to be nu, but that axis is missing in the parameters
-        new_params = map(self._add_last_dimension_if_not_scalar, params)
+        new_params = [self._add_last_dimension_if_ndarray(p) for p in params]
 
         res = []
         for i_p in range(self.n_param):
@@ -160,6 +183,14 @@ class Component(object):
         """
         return len(self._params)
 
+    def _set_default_of_free_symbols(self, **kwargs):
+        # Note that
+        # - kwargs can contain also keys that are not free symbols
+        # - only values of the free symbols are considered
+        # - these values are stored in the right order
+        self.defaults = [kwargs[symbol] for symbol in self.params]
+
+
     @property
     def defaults(self):
         """ Default values of the free parameters
@@ -167,7 +198,8 @@ class Component(object):
         try:
             assert len(self._defaults) == self.n_param
         except (AttributeError, AssertionError):
-            print("Component: uninitialized defaults requested, returning ones")
+            print("Component: unexpected number of or uninitialized defaults, "
+                  "returning ones")
             return [1.] * self.n_param
         return self._defaults
 
@@ -221,7 +253,7 @@ class AnalyticComponent(Component):
         Notable forbidden names are *beta*, *gamma*.
     **fixed_params: float
         Fix the value of the desired variables. If a variable is not specified
-        or is set eaual to ``None``, it will be a free parameters.
+        or is set equal to ``None``, it will be a free parameters.
 
     Note
     ----
@@ -243,6 +275,8 @@ class AnalyticComponent(Component):
       ``sympy.utilities.autowrap.ufuncify``.
       After constructing the anlytic component you can revert back the change by
       setting ``component_model.lambdify`` back to ``sympy.lambdify``.
+      The gain can negligible or considerable depending on the analytic
+      expression.
 
     .. _functions: https://docs.sympy.org/latest/modules/functions/index.html
     .. _sympy: https://docs.sympy.org/latest/modules/functions/index.html
@@ -262,12 +296,12 @@ class AnalyticComponent(Component):
         self._params.pop(0)
 
         # Create lambda functions
-        self._lambda = lambdify(symbols, self._expr, 'numpy')
+        self._lambda = lambdify(symbols, self._expr)
         lambdify_diff_param = lambda param: lambdify(
-            symbols, self._expr.diff(param), 'numpy')
+            symbols, self._expr.diff(param))
         self._lambda_diff = [lambdify_diff_param(p) for p in self._params]
         lambdify_diff_diff_params = lambda param1, param2: lambdify(
-            symbols, self._expr.diff(param1, param2), 'numpy')
+            symbols, self._expr.diff(param1, param2))
         self._lambda_diff_diff = []
         for p1 in self._params:
             self._lambda_diff_diff.append(
@@ -284,7 +318,7 @@ class ModifiedBlackBody(AnalyticComponent):
     ----------
     nu0: float
         Reference frequency
-    temp:
+    temp: float
         Black body temperature
     beta_d: float
         Spectral index
@@ -317,11 +351,8 @@ class ModifiedBlackBody(AnalyticComponent):
 
         super(ModifiedBlackBody, self).__init__(analytic_expr, **kwargs)
 
-        if beta_d is None:
-            self._defaults.append(self._REF_BETA)
-
-        if temp is None:
-            self._defaults.append(self._REF_TEMP)
+        self._set_default_of_free_symbols(
+            beta_d=self._REF_BETA, temp=self._REF_TEMP)
 
 
 class PowerLaw(AnalyticComponent):
@@ -333,50 +364,23 @@ class PowerLaw(AnalyticComponent):
         Reference frequency
     beta_pl: float
         Spectral index
+    nu_pivot: float
+        Pivot frequency for the running
+    running: float
+        Curvature of the power law
     units:
         Output units (K_CMB and K_RJ available)
     """
     _REF_BETA = -3
-
-    def __init__(self, nu0, beta_pl=None, units='K_CMB'):
-        # Prepare the analytic expression
-        analytic_expr = ('(nu / nu0)**(beta_pl)')
-        if 'K_CMB' in units:
-            analytic_expr += ' * ' + K_RJ2K_CMB_NU0
-        elif 'K_RJ' in units:
-            pass
-        else:
-            raise ValueError("Unsupported units: %s"%units)
-
-        kwargs = {'nu0': nu0, 'beta_pl': beta_pl}
-
-        super(PowerLaw, self).__init__(analytic_expr, **kwargs)
-
-        if beta_pl is None:
-            self._defaults.append(self._REF_BETA)
-
-
-class PowerLawCurv(AnalyticComponent):
-    """ Power law with curvature
-
-    Parameters
-    ----------
-    nu0: float
-        Reference frequency
-    nu_pivot: float
-        Pivot frequency for the running
-    beta_pl: float
-        Spectral index
-    running: float
-        Curvature of the Synchrotron
-    units:
-        Output units (K_CMB and K_RJ available)
-    """
-    _REF_BETA = -3.
     _REF_RUN = 0.
+    _REF_NU_PIVOT = 70.
 
-    def __init__(self, nu0, nu_pivot, beta_pl=None, running=None,
+    def __init__(self, nu0, beta_pl=None, nu_pivot=None, running=0.,
                  units='K_CMB'):
+        if nu_pivot == running == None:
+            print('Warning: are you sure you want both nu_pivot and the running'
+                  'to be free parameters?')
+
         # Prepare the analytic expression
         analytic_expr = '(nu / nu0)**(beta_pl + running * log(nu / nu_pivot))'
         if 'K_CMB' in units:
@@ -389,13 +393,10 @@ class PowerLawCurv(AnalyticComponent):
         kwargs = {'nu0': nu0, 'nu_pivot': nu_pivot,
                   'beta_pl': beta_pl, 'running': running}
 
-        super(PowerLawCurv, self).__init__(analytic_expr, **kwargs)
+        super(PowerLaw, self).__init__(analytic_expr, **kwargs)
 
-        if beta_pl is None:
-            self._defaults.append(self._REF_BETA)
-
-        if running is None:
-            self._defaults.append(self._REF_RUN)
+        self._set_default_of_free_symbols(
+            beta_pl=self._REF_BETA, running=self._REF_RUN, nu_pivot=self._REF_NU_PIVOT)
 
 
 class CMB(AnalyticComponent):
@@ -464,11 +465,8 @@ class FreeFree(AnalyticComponent):
 
         super(FreeFree, self).__init__(analytic_expr, **kwargs)
 
-        if logEM is None:
-            self._defaults.append(self._REF_LOGEM)
-
-        if Te is None:
-            self._defaults.append(self._REF_TE)
+        self._set_default_of_free_symbols(
+            logEM=self._REF_LOGEM, Te=self._REF_TE)
 
 
 class AME(Component):

@@ -1,3 +1,19 @@
+# FGBuster
+# Copyright (C) 2019 Davide Poletti, Josquin Errard and the FGBuster developers
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 """ Forecasting toolbox
 """
 import os.path as op
@@ -39,9 +55,13 @@ def xForecast(components, instrument, d_fgs, lmin, lmax,
         Instrument object used to define the mixing matrix and the
         frequency-dependent noise weight.
         It is required to have:
+
          - frequencies
+
         however, also the following are taken into account, if provided
+
          - sens_P (define the frequency inverse noise)
+
     d_fgs: ndarray
         The foreground maps. No CMB. Shape `(n_freq, n_stokes, n_pix)`.
         If some pixels have to be masked, set them to zero.
@@ -69,12 +89,16 @@ def xForecast(components, instrument, d_fgs, lmin, lmax,
     -------
     xFres: dict
         xForecast result. It includes
-         - the fitted spectral parameters
-         - noise-averaged post-component separation CMB power spectrum
-            - noise spectrum
-            - statistical residuals spectrum
-            - systematic residuals spectrum
-         - noise-averaged cosmological likelihood
+
+        - the fitted spectral parameters
+        - noise-averaged post-component separation CMB power spectrum
+
+          - noise spectrum
+          - statistical residuals spectrum
+          - systematic residuals spectrum
+
+        - noise-averaged cosmological likelihood
+
     """
     # Preliminaries
     instrument = _force_keys_as_attributes(instrument)

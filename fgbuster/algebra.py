@@ -1,12 +1,28 @@
+# FGBuster
+# Copyright (C) 2019 Davide Poletti, Josquin Errard and the FGBuster developers
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 """ Low-level component separation functions
 
 All the routines in this module do NOT support ``numpy.ma.MaskedArray``.
 In that case, you have two options
 
-1) Index `masked_array` with a mask so that you get standard `np.array`
+1) Index `masked_array` with a mask so that you get a standard `np.array`
    containing only unmasked values
 2) Whenever it is possible, you can pass `masked_array.data` and handle the
-   masked values by setting the corresponding entries of `invN` to zero
+   masked values by setting the corresponding entries of *invN* to zero
 """
 
 # Note for developpers
@@ -40,7 +56,21 @@ import numdifftools
 from functools import reduce
 
 
-__all__ = []  # Prevent wildcard import (names in algebra too generic)
+__all__ = [
+    'comp_sep',
+    'multi_comp_sep',
+    'logL',
+    'logL_dB',
+    'invAtNA',
+    'P',
+    'P_dBdB',
+    'D',
+    'W',
+    'W_dB',
+    'W_dBdB',
+    'Wd',
+    'fisher_logL_dB_dB',
+]
 
 
 OPTIMIZE = False
@@ -101,8 +131,8 @@ def _T(x):
 def _svd_sqrt_invN_A(A, invN=None, L=None):
     """ SVD of A and Cholesky factor of invN
 
-    Prewhiten `A` according to `invN` (if either `invN` or `L` is provided) and
-    return both its SVD and the Cholesky factor of `invN`.
+    Prewhiten *A* according to *invN* (if either *invN* or *L* is provided) and
+    return both its SVD and the Cholesky factor of *invN*.
     If you provide the Cholesky factor L, invN is ignored.
     It correctly handles blocks for invN equal to zero
     """
@@ -204,8 +234,12 @@ def P(A, invN=None, return_svd=False):
         res = _P_svd(u_e_v)
     else:
         res = _mm(_P_svd(u_e_v), _T(L))
-        res = sp.linalg.solve_triangular(L, res, lower=True,
-                                         overwrite_b=True, trans='T')
+        try:
+            res = sp.linalg.solve_triangular(L, res, lower=True,
+                                             overwrite_b=True, trans='T')
+        except np.linalg.LinAlgError:
+            return _mm(A, W(A, invN=invN))
+
     if return_svd:
         return res, (u_e_v, L)
     return res
@@ -222,8 +256,11 @@ def D(A, invN=None, return_svd=False):
         res = _D_svd(u_e_v)
     else:
         res = _mm(_D_svd(u_e_v), _T(L))
-        res = sp.linalg.solve_triangular(L, res, lower=True,
-                                         overwrite_b=True, trans='T')
+        try:
+            res = sp.linalg.solve_triangular(L, res, lower=True,
+                                             overwrite_b=True, trans='T')
+        except np.linalg.LinAlgError:
+            return np.eye(res.shape[-1]) - _mm(A, W(A, invN=invN))
     if return_svd:
         return res, (u_e_v, L)
     return res
@@ -252,23 +289,23 @@ def W_dB(A, A_dB, comp_of_dB, invN=None, return_svd=False):
     Parameters
     ----------
     A: ndarray
-        Mixing matrix. Shape `(..., n_freq, n_comp)`
+        Mixing matrix. Shape *(..., n_freq, n_comp)*
     invN: ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
     A_dB : ndarray or list of ndarray
         The derivative of the mixing matrix. If list, each entry is the
         derivative with respect to a different parameter.
     comp_of_dB: index or list of indices
-        It allows to provide in `A_dB` only the non-zero columns `A`.
-        `A_dB` is assumed to be the derivative of `A[comp_of_dB]`.
-        If a list is provided, also `A_dB` has to be a list and
-        `A_dB[i]` is assumed to be the derivative of `A[comp_of_dB[i]]`.
+        It allows to provide in *A_dB* only the non-zero columns *A*.
+        *A_dB* is assumed to be the derivative of ``A[comp_of_dB]``.
+        If a list is provided, also *A_dB* has to be a list and
+        ``A_dB[i]`` is assumed to be the derivative of ``A[comp_of_dB[i]]``.
 
     Returns
     -------
     res : array
-        Derivative of W. If `A_dB` is a list, `res[i]`
-        is computed from `A_dB[i]`.
+        Derivative of W. If *A_dB* is a list, ``res[i]``
+        is computed from ``A_dB[i]``.
     """
     A_dB, comp_of_dB = _A_dB_and_comp_of_dB_as_compatible_list(A_dB, comp_of_dB)
 
@@ -332,9 +369,9 @@ def P_dBdB(A, A_dB, A_dBdB, comp_of_dB, invN=None, return_svd=False):
     Parameters
     ----------
     A : ndarray
-        Mixing matrix. Shape `(..., n_freq, n_comp)`
+        Mixing matrix. Shape *(..., n_freq, n_comp)*
     invN: ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
     A_dB : ndarray or list of ndarray
         The derivative of the mixing matrix. If list, each entry is the
         derivative with respect to a different parameter.
@@ -342,11 +379,11 @@ def P_dBdB(A, A_dB, A_dBdB, comp_of_dB, invN=None, return_svd=False):
         The second derivative of the mixing matrix. If list, each entry is the
         derivative of A_dB with respect to a different parameter.
     comp_of_dB: index or list of indices
-        It allows to provide in `A_dB` only the non-zero columns `A`.
-        `A_dB` is assumed to be the derivative of `A[comp_of_dB]`.
-        If a list is provided, also `A_dB` and `A_dBdB` have to be a lists,
-        `A_dB[i]` and `A_dBdB[i][j]` (for any j) are assumed to be the
-        derivatives of `A[comp_of_dB[i]]`.
+        It allows to provide in *A_dB* only the non-zero columns *A*.
+        *A_dB* is assumed to be the derivative of ``A[comp_of_dB]``.
+        If a list is provided, also *A_dB* and *A_dBdB* have to be a lists,
+        ``A_dB[i]`` and ``A_dBdB[i][j]`` (for any j) are assumed to be the
+        derivatives of ``A[comp_of_dB[i]]``.
 
     Returns
     -------
@@ -433,9 +470,9 @@ def W_dBdB(A, A_dB, A_dBdB, comp_of_dB, invN=None, return_svd=False):
     Parameters
     ----------
     A : ndarray
-        Mixing matrix. Shape `(..., n_freq, n_comp)`
+        Mixing matrix. Shape *(..., n_freq, n_comp)*
     invN: ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
     A_dB : ndarray or list of ndarray
         The derivative of the mixing matrix. If list, each entry is the
         derivative with respect to a different parameter.
@@ -443,11 +480,11 @@ def W_dBdB(A, A_dB, A_dBdB, comp_of_dB, invN=None, return_svd=False):
         The second derivative of the mixing matrix. If list, each entry is the
         derivative of A_dB with respect to a different parameter.
     comp_of_dB: index or list of indices
-        It allows to provide in `A_dB` only the non-zero columns `A`.
-        `A_dB` is assumed to be the derivative of `A[comp_of_dB]`.
-        If a list is provided, also `A_dB` and `A_dBdB` have to be a lists,
-        `A_dB[i]` and `A_dBdB[i][j]` (for any j) are assumed to be the
-        derivatives of `A[comp_of_dB[i]]`.
+        It allows to provide in *A_dB* only the non-zero columns *A*.
+        *A_dB* is assumed to be the derivative of ``A[comp_of_dB]``.
+        If a list is provided, also *A_dB* and *A_dBdB* have to be a lists,
+        ``A_dB[i]`` and ``A_dBdB[i][j]`` (for any *j*) are assumed to be the
+        derivatives of ``A[comp_of_dB[i]]``.
 
     Returns
     -------
@@ -499,29 +536,29 @@ def logL_dB(A, d, invN, A_dB, comp_of_dB=np.s_[...], return_svd=False):
     Parameters
     ----------
     A: ndarray
-        Mixing matrix. Shape `(..., n_freq, n_comp)`
+        Mixing matrix. Shape *(..., n_freq, n_comp)*
     d: ndarray
-        The data vector. Shape `(..., n_freq)`.
+        The data vector. Shape *(..., n_freq)*.
     invN: ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
     A_dB : ndarray or list of ndarray
         The derivative of the mixing matrix. If list, each entry is the
         derivative with respect to a different parameter.
     comp_of_dB: IndexExpression or list of IndexExpression
-        It allows to provide in `A_dB` only the non-zero columns `A`.
-        `A_dB` is assumed to be the derivative of `A[comp_of_dB]`.
-        If a list is provided, also `A_dB` has to be a list and
-        `A_dB[i]` is assumed to be the derivative of `A[comp_of_dB[i]]`.
+        It allows to provide in *A_dB* only the non-zero columns *A*.
+        *A_dB* is assumed to be the derivative of ``A[comp_of_dB]``.
+        If a list is provided, also *A_dB* has to be a list and
+        ``A_dB[i]`` is assumed to be the derivative of ``A[comp_of_dB[i]]``.
 
     Returns
     -------
     diff : array
-        Derivative of the spectral likelihood. If `A_dB` is a list, `diff[i]`
-        is computed from `A_dB[i]`.
+        Derivative of the spectral likelihood. If *A_dB* is a list, ``diff[i]``
+        is computed from ``A_dB[i]``.
 
     Note
     ----
-    The `...` in the shape of the arguments denote any extra set of dimentions.
+    The *...* in the shape of the arguments denote any extra set of dimensions.
     They have to be compatible among different arguments in the `numpy`
     broadcasting sense.
     """
@@ -683,31 +720,31 @@ def comp_sep(A_ev, d, invN, A_dB_ev, comp_of_dB,
     A_ev : function
         The evaluator of the mixing matrix. It takes a float or an array as
         argument and returns the mixing matrix, a ndarray with shape
-        `(..., n_freq, n_comp)`
+        *(..., n_freq, n_comp)*
     d: ndarray
-        The data vector. Shape `(..., n_freq)`.
+        The data vector. Shape *(..., n_freq)*.
     invN: ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
     A_dB_ev : function
         The evaluator of the derivative of the mixing matrix.
         It returns a list, each entry is the derivative with respect to a
         different parameter.
     comp_of_dB: list of IndexExpression
-        It allows to provide as output of `A_dB_ev` only the non-zero columns
-        `A`. `A_dB_ev(x)[i]` is assumed to be the derivative of
-        `A[comp_of_dB[i]]`.
+        It allows to provide as output of *A_dB_ev* only the non-zero columns
+        *A*. ``A_dB_ev(x)[i]`` is assumed to be the derivative of
+        ``A[comp_of_dB[i]]``.
     minimize_args: list
         Positional arguments to be passed to `scipy.optimize.minimize`.
-        At this moment it just contains `x0`, the initial guess for the spectral
+        At this moment it just contains *x0*, the initial guess for the spectral
         parameters
     minimize_kwargs: dict
         Keyword arguments to be passed to `scipy.optimize.minimize`.
         A good choice for most cases is
-        `minimize_kwargs = {'tol': 1, options: {'disp': True}}`. `tol` depends
+        ``minimize_kwargs = {'tol': 1, options: {'disp': True}}``. *tol* depends
         on both the solver and your signal to noise: it should ensure that the
         difference between the best fit -logL and and the minimum is well less
         then 1, without exagereting (a difference of 1e-4 is useless).
-        `disp` also triggers a verbose callback that monitors the convergence.
+        *disp* also triggers a verbose callback that monitors the convergence.
 
     Returns
     -------
@@ -716,20 +753,16 @@ def comp_sep(A_ev, d, invN, A_dB_ev, comp_of_dB,
         It is the output of `scipy.optimize.minimize`, plus some extra.
         It includes
 
-        - x : (array)
-            Maximum likelihood spectral parameters
-        - Sigma : (ndarray)
-            Covariance of the spectral parameters,
-            with the addition of some extra information
-        - s : (ndarray)
-            Separated components. Shape `(..., n_comp)`
-        - invAtNA : (ndarray)
-            Covariance of the separated components.
-            Shape `(..., n_comp, n_comp)`
+	- **x**: *(ndarray)* - the best-fit spectra indices
+        - **Sigma**: *(ndarray)* - the semi-analytic covariance of the best-fit
+          spectra indices patch.
+        - **s**: *(ndarray)* - Separated components, Shape *(..., n_comp)*
+        - **invAtNA** : *(ndarray)* - Covariance of the separated components.
+          Shape *(..., n_comp, n_comp)*
 
     Note
     ----
-    The `...` in the arguments denote any extra set of dimention. They have to
+    The *...* in the arguments denote any extra set of dimension. They have to
     be compatible among different arguments in the `numpy` broadcasting sense.
     """
     # If mixing matrix is fixed, separate and return
@@ -813,65 +846,66 @@ def multi_comp_sep(A_ev, d, invN, A_dB_ev, comp_of_dB, patch_ids,
                    *minimize_args, **minimize_kargs):
     """ Perform component separation
 
-    Run an independent `comp_sep` for entries identified by `patch_ids` and
-    gathers the result.
+    Run an independent :func:`comp_sep` for entries identified by *patch_ids*
+    and gathers the result.
 
     Parameters
     ----------
     A_ev : function or ndarray
         The evaluator of the mixing matrix. It takes a float or an array as
         argument and returns the mixing matrix, a ndarray with shape
-        `(..., n_freq, n_comp)`
+        *(..., n_freq, n_comp)*
         If list, the i-th entry is the evaluator of the i-th patch.
     d : ndarray
-        The data vector. Shape `(..., n_freq)`.
+        The data vector. Shape *(..., n_freq)*.
     invN : ndarray or None
-        The inverse noise matrix. Shape `(..., n_freq, n_freq)`.
-        If a block of `invN` has a diagonal element equal to zero the
-        corresponding entries of `d` are masked.
+        The inverse noise matrix. Shape *(..., n_freq, n_freq)*.
+        If a block of *invN* has a diagonal element equal to zero the
+        corresponding entries of *d* are masked.
     A_dB_ev : function
         The evaluator of the derivative of the mixing matrix.
         It returns a list, each entry is the derivative with respect to a
         different parameter.
     comp_of_dB : list of IndexExpression
-        It allows to provide as output of `A_dB_ev` only the non-zero columns
-        `A`. `A_dB_ev(x)[i]` is assumed to be the derivative of
-        `A[comp_of_dB[i]]`.
+        It allows to provide as output of *A_dB_ev* only the non-zero columns
+        *A*. ``A_dB_ev(x)[i]`` is assumed to be the derivative of
+        ``A[comp_of_dB[i]]``.
     patch_ids : array
         id of regions.
     minimize_args : list
         Positional arguments to be passed to `scipy.optimize.minimize`.
-        At this moment, it just contains `x0`, the initial guess for the
+        At this moment, it just contains *x0*, the initial guess for the
         spectral parameters. It is required if A_ev is a function and ignored
         otherwise.
-    minimize_kwargs: dict
+    minimize_kwargs : dict
         Keyword arguments to be passed to `scipy.optimize.minimize`.
         A good choice for most cases is
-        `minimize_kwargs = {'tol': 1, options: {'disp': True}}`. `tol` depends
+        ``minimize_kwargs = {'tol': 1, options: {'disp': True}}``. *tol* depends
         on both the solver and your signal-to-noise: it should ensure that the
         difference between the best fit -logL and the minimum is way less
         than 1, without exagerating (a difference of 1e-4 is useless).
-        `disp` also triggers a verbose callback that monitors the convergence.
+        *disp* also triggers a verbose callback that monitors the convergence.
 
     Returns
     -------
-    result : scipy.optimze.OptimizeResult (dict)
-        Result of the spectral likelihood maximization
-	It is the output of `scipy.optimize.minimize`, and thus includes
+    result: dict
+        It gathers the results of the component separation on each patch.
+	It includes
 
-	- `patch_res` : list
-            the i-th entry is the result of :func:`comp_sep` on
-            ``patch_ids == i``
-
-        with the addition of some extra information
-
-	- s : (ndarray)
-	    Separated components, collected from all the patches.
-            Shape `(..., n_comp)`
+	- **x**: *(ndarray)* - ``x[i]`` contains the best-fit spectra indices
+          from the i-th patch.  Shape *(n_patches, n_param)*
+        - **Sigma**: *(ndarray)* - ``Sigma[i]`` contains the semi-analytic
+          covariance of the best-fit spectra indices estimated from the `i`-th
+          patch.  Shape *(n_patches, n_param, n_param)*
+        - **s**: *(ndarray)* - Separated components, collected from all the
+          patches.  Shape *(..., n_comp)*
+        - **patch_res**: *(list)* - the i-th entry is the result of
+          :func:`comp_sep` on ``patch_ids == i`` (with the exception of the
+          quantities collected from all the patches)
 
     Note
     ----
-    The `...` in the arguments denote any extra set of dimention. They have to
+    The *...* in the arguments denote any extra set of dimension. They have to
     be compatible among different arguments in the `numpy` broadcasting sense.
     """
     # TODO: add the possibility of patch specific x0
@@ -1034,7 +1068,7 @@ def verbose_callback():
 
 
 def _get_from_caller(name):
-    """ Get the `name` variable from the scope immediately above
+    """ Get the *name* variable from the scope immediately above
 
     NOTE
     ----

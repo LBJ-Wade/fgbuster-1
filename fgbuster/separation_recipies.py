@@ -1,3 +1,19 @@
+# FGBuster
+# Copyright (C) 2019 Davide Poletti, Josquin Errard and the FGBuster developers
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
 """ High-level component separation routines
 
 """
@@ -371,6 +387,7 @@ def _get_prewhiten_factors(instrument, data_shape, nside):
         It is expected to be `(n_freq, n_stokes, n_pix)`. `n_stokes` is used to
         define if sens_I or sens_P (or both) should be used to compute the
         factors.
+
         - If `n_stokes` is absent or `n_stokes == 1`, use sens_I.
         - If `n_stokes == 2`, use sens_P.
         - If `n_stokes == 3`, the factors will have shape (3, n_freq). Sens_I is
