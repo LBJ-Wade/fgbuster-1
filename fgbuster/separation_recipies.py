@@ -359,6 +359,7 @@ def basic_comp_sep(components, instrument, data, nside=0, **minimize_kwargs):
     # Craft output
     # 1) Apply the mask, if any
     # 2) Restore the ordering of the input data (pixel dimension last)
+    res.components = MixingMatrix(*components).components
     res.params = params
     res.s = res.s.T
     res.s[..., mask] = hp.UNSEEN
